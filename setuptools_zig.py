@@ -35,6 +35,14 @@ class BuildExt(SetupToolsBuildExt):
         output = Path(self.get_ext_filename(ext.name))
         target = Path(self.get_ext_fullpath(ext.name))
 
+        if target.exists():
+            target.unlink() # Delete old build
+
+        build_dir = target.parent
+        # TODO: clear whole build folder?
+        if not build_dir.exists():
+            build_dir.mkdir(exist_ok=True, parents=True)
+
         zig = os.environ.get('PY_ZIG', 'zig')  # override zig in path with specific version
         if sys.platform == 'darwin':
             libdirs = self.compiler.library_dirs
@@ -89,38 +97,36 @@ class BuildExt(SetupToolsBuildExt):
             for fn in obj_files:
                 fn.unlink()
         else:
-            bld_cmd = [zig, 'build-lib', '-dynamic', '-DPYHEXVER={}'.format(sys.hexversion), '--name', output.stem]
+            bld_cmd = [zig, 'build-lib', '-dynamic', '-DPYHEXVER={:02X}'.format(sys.hexversion), '--name', output.stem]
             for inc_dir in self.compiler.include_dirs:
                 bld_cmd.extend(('-I', inc_dir))
             for path in ['/usr/include', '/usr/include/x86_64-linux-gnu/']:
                 if os.path.exists(path):
-                    bld_cmd.extend(('-I', path))
-            bld_cmd.extend(ext.sources)
+                    bld_cmd.extend(('-I', str(Path(path).absolute())))
+            bld_cmd.extend([str(Path(s).absolute()) for s in ext.sources])
             if verbose > 1:
                 print('output', output, target)
                 for k, v in self.compiler.__dict__.items():
                     print(' ', k, '->', v)
             if verbose > 0:
+                print(f'\nbuild_dir {build_dir}')
                 print('\ncmd', ' '.join([x if ' ' not in x else '"' + x + '"' for x in bld_cmd]))
                 sys.stdout.flush()
-            subprocess.run(bld_cmd, encoding='utf-8')
+            subprocess.run(bld_cmd, encoding='utf-8', cwd=build_dir)
         if verbose > 0:
-            print([str(target)])
-            print([str(x) for x in target.parent.glob('*')])
-        if not output.exists():
-            output = output.parent / ('lib' + output.name)
-        if output.exists():
-            if target.exists():
-                target.unlink()
-            else:
-                target.parent.mkdir(exist_ok=True, parents=True)
-            output.rename(target)
-        else:
-            if sys.platform == 'darwin' and target.exists():
-                pass
-            else:
-                raise ZigCompilerError(f'expected output {output} does not exist')
+            print(f"target {target}")
+            print(f"output {output}")
+            print(f"built files: {[str(x) for x in target.parent.glob('*')]}")
 
+        if not target.exists():
+            # If it adds lib to the so name rename it back
+             alt_target = build_dir / ('lib'+target.name)
+             if alt_target.exists():
+                 alt_target.rename(target)
+
+        if not target.exists():
+            raise ZigCompilerError(f'expected build target {target} does not exist')
+        # the superclass copies to output
 
 class ZigBuildExtension:
     def __init__(self, value):
