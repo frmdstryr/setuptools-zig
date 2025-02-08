@@ -98,6 +98,7 @@ class BuildExt(SetupToolsBuildExt):
                 fn.unlink()
         else:
             bld_cmd = [zig, 'build-lib', '-dynamic', '-DPYHEXVER={:02X}'.format(sys.hexversion), '--name', output.stem]
+            bld_cmd.extend(ext.extra_compile_args)
             for inc_dir in self.compiler.include_dirs:
                 bld_cmd.extend(('-I', inc_dir))
             for path in ['/usr/include', '/usr/include/x86_64-linux-gnu/']:
